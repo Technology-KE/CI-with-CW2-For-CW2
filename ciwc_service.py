@@ -299,13 +299,14 @@ class LinkService(QObject):
             return
 
         order = str(layout.get("order") or "cw2_top")
+        if order == "cw2_top":
+            # CW2 在上：CW2 完全不移动，只有 CI 下移。
+            if saved is not None:
+                self._restore_stack_original(saved)
+            return
+
         gap = int(layout.get("gap", 12) or 0)
-        target_offset = 0
-        if order == "ci_top":
-            target_offset = max(0, self._peer_height() + gap)
-        else:
-            # CW2 在上：CW2 保持用户设定的偏移，不移动。
-            target_offset = int(saved.get("offset_y", self._current_offset())) if saved else self._current_offset()
+        target_offset = max(0, self._peer_height() + gap)
 
         try:
             configs = self.api.globalconfig.configs
