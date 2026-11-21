@@ -279,35 +279,39 @@ class LinkService(QObject):
             return "top_center"
 
     def _apply_stack_layout(self) -> None:
-        """只调整垂直间距：CW2 的锚点保持不变，避免恢复显示时跳位置。"""
+        """预设 1/2：只调整垂直偏移；用户改动锚点/停靠位置后自动转为 3 自定义。"""
         settings = self.store.snapshot()
         layout = settings["layout"]
+        mode = str(layout.get("mode") or "cw2_top")
         saved = self.local_state.get("stack_cw2_original")
-        enabled = bool(settings.get("enabled")) and bool(layout.get("stack", True)) and not bool(settings["cw2_layout"].get("apply"))
+        enabled = (
+            bool(settings.get("enabled"))
+            and mode in {"cw2_top", "ci_top"}
+            and not bool(settings["cw2_layout"].get("apply"))
+        )
 
         anchor = self._current_anchor()
-        peer_anchor = ""
-        peer_dock = 1
-        if self._peer_snapshot:
-            peer_anchor = str(self._peer_snapshot.get("anchor", ""))
-            peer_dock = int(self._peer_snapshot.get("docking", 1) or 1)
+        peer_dock = int((self._peer_snapshot or {}).get("docking", 1) or 1)
 
-        # 只在双方都停靠在顶部时上下排列；不做左右/上下侧的自动换边。
-        if not enabled or not anchor.startswith("top_") or peer_dock > 2:
+        if not enabled:
             if saved is not None:
                 self._restore_stack_original(saved)
             return
 
-        order = str(layout.get("order") or "cw2_top")
-        if order == "cw2_top":
-            # CW2 在上：CW2 完全不移动，只有 CI 下移。
+        if not anchor.startswith("top_") or peer_dock > 2:
+            # 用户自己改了位置：切成自定义，不再自动排列。
+            self.store.set_value("layout.mode", "custom", source=APP_CW2)
+            if saved is not None:
+                self._restore_stack_original(saved)
+            return
+
+        if mode == "cw2_top":
             if saved is not None:
                 self._restore_stack_original(saved)
             return
 
         gap = int(layout.get("gap", 12) or 0)
         target_offset = max(0, self._peer_height() + gap)
-
         try:
             configs = self.api.globalconfig.configs
         except Exception:

@@ -50,6 +50,13 @@ PluginPage {
         }
     }
 
+    function selectMode(mode) {
+        if (!backend) return
+        if (mode !== "custom")
+            page.save("cw2_layout", { anchor: "top_center" })
+        page.save("layout", { mode: mode })
+    }
+
     function saveFeature(feature, value) {
         if (!backend) return
         page.save("features." + feature, value)
@@ -312,27 +319,91 @@ PluginPage {
                     }
                     Text { typography: Typography.Body; text: "由联动统一控制" }
 
-                    Item { Layout.preferredWidth: 16 }
-                    Switch {
-                        checked: page.valueOf("layout", "stack", true)
-                        onClicked: page.save("layout", { stack: checked })
+                }
+
+                Text {
+                    typography: Typography.Body
+                    text: "展示方式"
+                }
+
+                RowLayout {
+                    spacing: 12
+
+                    Repeater {
+                        model: [
+                            { mode: "cw2_top", label: "1  CW2 在上 / CI 在下" },
+                            { mode: "ci_top", label: "2  CI 在上 / CW2 在下" },
+                            { mode: "custom", label: "3  自定义" }
+                        ]
+
+                        delegate: ColumnLayout {
+                            spacing: 4
+                            readonly property bool selected: page.valueOf("layout", "mode", "cw2_top") === modelData.mode
+
+                            Rectangle {
+                                width: 168
+                                height: 68
+                                radius: 8
+                                color: Theme.currentTheme.colors.controlColor
+                                border.width: selected ? 2 : 1
+                                border.color: selected
+                                              ? Theme.currentTheme.colors.primaryColor
+                                              : Theme.currentTheme.colors.controlBorderColor
+
+                                // 预览：两条窗口示意
+                                Rectangle {
+                                    x: 10; y: 8; width: 148; height: 18; radius: 6
+                                    color: modelData.mode === "ci_top"
+                                           ? Theme.currentTheme.colors.textSecondaryColor
+                                           : Theme.currentTheme.colors.primaryColor
+                                    opacity: modelData.mode === "custom" ? 0.85 : 0.9
+                                    width: modelData.mode === "custom" ? 66 : 148
+                                }
+                                Rectangle {
+                                    x: modelData.mode === "custom" ? 70 : 10
+                                    y: modelData.mode === "custom" ? 34 : 34
+                                    width: modelData.mode === "custom" ? 78 : 148
+                                    height: 18; radius: 6
+                                    color: modelData.mode === "ci_top"
+                                           ? Theme.currentTheme.colors.primaryColor
+                                           : Theme.currentTheme.colors.textSecondaryColor
+                                    opacity: 0.6
+                                }
+
+                                TapHandler {
+                                    onTapped: page.selectMode(modelData.mode)
+                                }
+                            }
+
+                            RowLayout {
+                                spacing: 6
+                                Rectangle {
+                                    width: 14; height: 14; radius: 7
+                                    color: "transparent"
+                                    border.width: 2
+                                    border.color: selected
+                                                  ? Theme.currentTheme.colors.primaryColor
+                                                  : Theme.currentTheme.colors.controlBorderColor
+                                    Rectangle {
+                                        anchors.centerIn: parent
+                                        width: selected ? 7 : 0
+                                        height: selected ? 7 : 0
+                                        radius: 3.5
+                                        color: Theme.currentTheme.colors.primaryColor
+                                    }
+                                }
+                                Text { typography: Typography.Caption; text: modelData.label }
+                            }
+                        }
                     }
-                    Text { typography: Typography.Body; text: "上下排列（保持间距）" }
                 }
 
                 RowLayout {
                     spacing: 8
-                    Text { typography: Typography.Body; text: "排列顺序" }
-                    ComboBox {
-                        Layout.preferredWidth: 150
-                        model: ["CW2 在上", "ClassIsland 在上"]
-                        currentIndex: page.valueOf("layout", "order", "cw2_top") === "ci_top" ? 1 : 0
-                        onActivated: page.save("layout", { order: currentIndex === 0 ? "cw2_top" : "ci_top" })
-                    }
                     Text {
                         typography: Typography.Caption
                         opacity: 0.65
-                        text: "间距 " + page.valueOf("layout", "gap", 12) + " px"
+                        text: "间距 " + page.valueOf("layout", "gap", 12) + " px（仅 1 / 2 生效）"
                     }
                     Button { text: "−"; implicitWidth: 30; implicitHeight: 28; onClicked: page.adjust("layout", "gap", -4, 0, 200) }
                     Button { text: "+"; implicitWidth: 30; implicitHeight: 28; onClicked: page.adjust("layout", "gap", 4, 0, 200) }

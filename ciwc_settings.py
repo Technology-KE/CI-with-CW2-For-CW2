@@ -58,10 +58,9 @@ def default_settings() -> dict:
             "show_teacher": True,
             "show_weekday": True,
         },
-        # 两个界面上下排列，保持固定间距（如 CW2 在上、ClassIsland 在下）
+        # 展示方式：cw2_top（1，CW2 在上）/ ci_top（2，CI 在上）/ custom（3，自定义）
         "layout": {
-            "stack": True,
-            "order": "cw2_top",
+            "mode": "cw2_top",
             "gap": 12,
         },
         "cw2_layout": {
@@ -138,12 +137,17 @@ def normalize_settings(raw: Any) -> dict:
 
     layout = data.get("cw2_layout") if isinstance(data.get("cw2_layout"), dict) else {}
     anchor = str(layout.get("anchor") or "top_center").strip().lower()
-    stack = data.get("layout") if isinstance(data.get("layout"), dict) else {}
-    order = str(stack.get("order") or "cw2_top").strip().lower()
+    raw_layout = data.get("layout") if isinstance(data.get("layout"), dict) else {}
+    mode = str(raw_layout.get("mode") or "").strip().lower()
+    if mode not in {"cw2_top", "ci_top", "custom"}:
+        if raw_layout.get("stack") is False:
+            mode = "custom"
+        else:
+            order = str(raw_layout.get("order") or "cw2_top").strip().lower()
+            mode = "ci_top" if order == "ci_top" else "cw2_top"
     data["layout"] = {
-        "stack": as_bool(stack.get("stack"), True),
-        "order": order if order in {"cw2_top", "ci_top"} else "cw2_top",
-        "gap": as_int(stack.get("gap"), 12, 0, 200),
+        "mode": mode,
+        "gap": as_int(raw_layout.get("gap"), 12, 0, 200),
     }
     data["cw2_layout"] = {
         "apply": as_bool(layout.get("apply"), False),
