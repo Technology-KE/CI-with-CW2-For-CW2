@@ -272,34 +272,40 @@ class LinkService(QObject):
         except Exception:
             return 0
 
+    def _current_anchor(self) -> str:
+        try:
+            return str(self.api.globalconfig.configs.data["preferences"]["widgets_anchor"])
+        except Exception:
+            return "top_center"
+
     def _apply_stack_layout(self) -> None:
-        """让 ClassIsland 与 CW2 上下排列并保持间距（如 CW2 在上、CI 在下）。"""
+        """只调整垂直间距：CW2 的锚点保持不变，避免恢复显示时跳位置。"""
         settings = self.store.snapshot()
         layout = settings["layout"]
         saved = self.local_state.get("stack_cw2_original")
+        enabled = bool(settings.get("enabled")) and bool(layout.get("stack", True)) and not bool(settings["cw2_layout"].get("apply"))
 
-        peer_fresh = bool(self._peer_snapshot) and (time.time() - self._peer_snapshot_at) <= 8.0
-        ci_visible = bool(peer_fresh and self._peer_snapshot.get("window_visible"))
-        should_stack = (
-            bool(settings.get("enabled"))
-            and bool(layout.get("stack", True))
-            and not bool(settings["cw2_layout"].get("apply"))
-            and ci_visible
-        )
-        if not should_stack:
+        anchor = self._current_anchor()
+        peer_anchor = ""
+        peer_dock = 1
+        if self._peer_snapshot:
+            peer_anchor = str(self._peer_snapshot.get("anchor", ""))
+            peer_dock = int(self._peer_snapshot.get("docking", 1) or 1)
+
+        # 只在双方都停靠在顶部时上下排列；不做左右/上下侧的自动换边。
+        if not enabled or not anchor.startswith("top_") or peer_dock > 2:
             if saved is not None:
                 self._restore_stack_original(saved)
             return
 
-        bar = self._bar_height()
-        if bar <= 0:
-            return
         order = str(layout.get("order") or "cw2_top")
         gap = int(layout.get("gap", 12) or 0)
-        docking = int((self._peer_snapshot or {}).get("docking", 1) or 1)
-        column = ["left", "center", "right"][max(0, min(2, docking % 3))]
-        target_anchor = f"top_{column}"
-        target_offset = 0 if order == "cw2_top" else max(0, self._peer_height() + gap)
+        target_offset = 0
+        if order == "ci_top":
+            target_offset = max(0, self._peer_height() + gap)
+        else:
+            # CW2 在上：CW2 保持用户设定的偏移，不移动。
+            target_offset = int(saved.get("offset_y", self._current_offset())) if saved else self._current_offset()
 
         try:
             configs = self.api.globalconfig.configs
@@ -307,21 +313,19 @@ class LinkService(QObject):
             return
         if saved is None:
             self.local_state["stack_cw2_original"] = {
-                "anchor": configs.data["preferences"]["widgets_anchor"],
                 "offset_y": configs.data["preferences"]["widgets_offset_y"],
                 "offset_x": configs.data["preferences"]["widgets_offset_x"],
             }
             self._save_local_state()
-        changed = False
-        if not configs.isKeyLocked("preferences.widgets_anchor") and configs.data["preferences"]["widgets_anchor"] != target_anchor:
-            configs.set("preferences.widgets_anchor", target_anchor)
-            changed = True
         if not configs.isKeyLocked("preferences.widgets_offset_y") and int(configs.data["preferences"]["widgets_offset_y"]) != target_offset:
             configs.set("preferences.widgets_offset_y", target_offset)
-            changed = True
-        if changed:
             configs.save(silent=True)
-            logger.info("上下排列：CW2 offset_y={}（{}）", target_offset, order)
+
+    def _current_offset(self) -> int:
+        try:
+            return int(self.api.globalconfig.configs.data["preferences"]["widgets_offset_y"])
+        except Exception:
+            return 0
 
     def _restore_stack_original(self, saved: dict) -> None:
         try:
@@ -329,19 +333,14 @@ class LinkService(QObject):
         except Exception:
             return
         changed = False
-        for key, field in (
-            ("preferences.widgets_anchor", "anchor"),
-            ("preferences.widgets_offset_y", "offset_y"),
-            ("preferences.widgets_offset_x", "offset_x"),
-        ):
+        for key, field in (("preferences.widgets_offset_y", "offset_y"), ("preferences.widgets_offset_x", "offset_x")):
             if configs.isKeyLocked(key) or saved.get(field) is None:
                 continue
-            if configs.data["preferences"].get(key.split(".")[-1]) != saved.get(field):
-                configs.set(key, saved.get(field))
+            if int(configs.data["preferences"].get(key.split(".")[-1], 0)) != int(saved.get(field, 0)):
+                configs.set(key, int(saved.get(field, 0)))
                 changed = True
         if changed:
             configs.save(silent=True)
-            logger.info("恢复 CW2 原位置")
         self.local_state.pop("stack_cw2_original", None)
         self._save_local_state()
 
@@ -452,6 +451,7 @@ class LinkService(QObject):
                 "date": now.strftime("%Y-%m-%d"),
                 "weekday": WEEKDAY_NAMES[now.weekday()],
                 "bar_height": self._bar_height(),
+                "anchor": self._current_anchor(),
                 "cw2_hidden": False,
             }
         )
