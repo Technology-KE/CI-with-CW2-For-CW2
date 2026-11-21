@@ -352,7 +352,7 @@ PluginPage {
 
                                 // 预览：两条窗口示意
                                 Rectangle {
-                                    x: 10; y: 8; width: 148; height: 18; radius: 6
+                                    x: 10; y: 8; height: 18; radius: 6
                                     color: modelData.mode === "ci_top"
                                            ? Theme.currentTheme.colors.textSecondaryColor
                                            : Theme.currentTheme.colors.primaryColor
