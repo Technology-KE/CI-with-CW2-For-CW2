@@ -20,6 +20,7 @@ PluginPage {
     property bool ready: false
     property string statusText: "正在读取……"
     property string savedHint: ""
+    property bool connected: false
 
     readonly property var roleOptions: ["ci", "cw2"]
     readonly property var roleLabels: ["ClassIsland 主程序", "Class Widgets 2 主程序"]
@@ -35,7 +36,9 @@ PluginPage {
     }
 
     function refreshStatus() {
-        if (backend) statusText = backend.statusSummary()
+        if (!backend) return
+        statusText = backend.statusSummary()
+        connected = backend.state ? backend.state.connected === true : false
     }
 
     function save(path, value) {
@@ -110,7 +113,8 @@ PluginPage {
             RowLayout {
                 spacing: 8
                 Button {
-                    text: "启动 ClassIsland"
+                    text: page.connected ? "已连接，无需启动" : "启动 ClassIsland"
+                    enabled: !page.connected
                     onClicked: if (backend) backend.launchPeer()
                 }
                 Button {
@@ -307,6 +311,31 @@ PluginPage {
                         onClicked: page.save("cw2_layout", { apply: checked })
                     }
                     Text { typography: Typography.Body; text: "由联动统一控制" }
+
+                    Item { Layout.preferredWidth: 16 }
+                    Switch {
+                        checked: page.valueOf("layout", "stack", true)
+                        onClicked: page.save("layout", { stack: checked })
+                    }
+                    Text { typography: Typography.Body; text: "上下排列（保持间距）" }
+                }
+
+                RowLayout {
+                    spacing: 8
+                    Text { typography: Typography.Body; text: "排列顺序" }
+                    ComboBox {
+                        Layout.preferredWidth: 150
+                        model: ["CW2 在上", "ClassIsland 在上"]
+                        currentIndex: page.valueOf("layout", "order", "cw2_top") === "ci_top" ? 1 : 0
+                        onActivated: page.save("layout", { order: currentIndex === 0 ? "cw2_top" : "ci_top" })
+                    }
+                    Text {
+                        typography: Typography.Caption
+                        opacity: 0.65
+                        text: "间距 " + page.valueOf("layout", "gap", 12) + " px"
+                    }
+                    Button { text: "−"; implicitWidth: 30; implicitHeight: 28; onClicked: page.adjust("layout", "gap", -4, 0, 200) }
+                    Button { text: "+"; implicitWidth: 30; implicitHeight: 28; onClicked: page.adjust("layout", "gap", 4, 0, 200) }
                 }
 
                 RowLayout {
@@ -446,6 +475,24 @@ PluginPage {
                         onClicked: page.save("dedupe", { ci_disable_automation: checked })
                     }
                     Text { typography: Typography.Body; text: "ClassIsland 是副程序时暂停自动化" }
+                }
+
+                RowLayout {
+                    spacing: 8
+                    Switch {
+                        checked: page.valueOf("dedupe", "ci_hide_main_window", false)
+                        onClicked: page.save("dedupe", { ci_hide_main_window: checked })
+                    }
+                    Text { typography: Typography.Body; text: "ClassIsland 是副程序时隐藏其主界面（避免与 CW2 重叠）" }
+                }
+
+                RowLayout {
+                    spacing: 8
+                    Switch {
+                        checked: page.valueOf("dedupe", "ci_follow_cw2_visibility", true)
+                        onClicked: page.save("dedupe", { ci_follow_cw2_visibility: checked })
+                    }
+                    Text { typography: Typography.Body; text: "CW2 隐藏 / 恢复时，ClassIsland 主界面一起隐藏 / 恢复" }
                 }
             }
         }

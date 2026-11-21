@@ -99,6 +99,7 @@ class LinkService(QObject):
         self._layout_signature = ""
         self._started = False
         self._auto_launch_at = 0.0
+        self._auto_target = ""
 
         self._timer = QTimer(self)
         self._timer.setInterval(400)
@@ -141,6 +142,7 @@ class LinkService(QObject):
         status = self.bridge.status()
         if status != self._last_status:
             self._last_status = status
+            self._apply_dedupe(self.store.snapshot())
             self.changed.emit()
 
         now = time.time()
@@ -149,6 +151,8 @@ class LinkService(QObject):
             self._snapshot = self._build_local_snapshot()
             if status.get("connected"):
                 self.bridge.send({"type": "state", "app": APP_CW2, "ts": now_ms(), "state": self._snapshot})
+
+        self._apply_stack_layout()
 
         settings = self.store.snapshot()
         if settings.get("enabled") and settings["process"].get("auto_launch_peer"):
@@ -205,6 +209,8 @@ class LinkService(QObject):
 
     # ------------------------------ 对外指令 ------------------------------
     def launch_peer(self, auto: bool = False) -> bool:
+        if self.bridge.status().get("connected"):
+            return True
         path = self._resolve_ci_path()
         if not path:
             if not auto:
@@ -227,7 +233,11 @@ class LinkService(QObject):
 
     def _resolve_ci_path(self) -> Path | None:
         settings = self.store.snapshot()
-        candidates = [settings["process"].get("ci_path", "").strip(), os.environ.get("CIWITHCW2_CI_PATH", "").strip()]
+        candidates = [
+            settings["process"].get("ci_path", "").strip(),
+            os.environ.get("CIWITHCW2_CI_PATH", "").strip(),
+            (self.bridge.status().get("peer_exe") or "").strip(),
+        ]
         local = os.environ.get("LOCALAPPDATA", "")
         program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
         candidates += [
@@ -241,6 +251,99 @@ class LinkService(QObject):
             if path.is_file():
                 return path
         return None
+
+    def _bar_height(self) -> int:
+        try:
+            root = self.api._app.widgets_window.root_window
+            if not root:
+                return 0
+            from PySide6.QtCore import QObject
+            loader = root.findChild(QObject, "widgetsLoader")
+            if not loader:
+                return 0
+            # CI 的 WindowDockingOffsetY 是物理像素；Qt 高度是逻辑像素，需乘 DPR。
+            return int(round(loader.height() * float(root.devicePixelRatio())))
+        except Exception:
+            return 0
+
+    def _peer_height(self) -> int:
+        try:
+            return int(self._peer_snapshot.get("window_height", 0) or 0)
+        except Exception:
+            return 0
+
+    def _apply_stack_layout(self) -> None:
+        """让 ClassIsland 与 CW2 上下排列并保持间距（如 CW2 在上、CI 在下）。"""
+        settings = self.store.snapshot()
+        layout = settings["layout"]
+        saved = self.local_state.get("stack_cw2_original")
+
+        peer_fresh = bool(self._peer_snapshot) and (time.time() - self._peer_snapshot_at) <= 8.0
+        ci_visible = bool(peer_fresh and self._peer_snapshot.get("window_visible"))
+        should_stack = (
+            bool(settings.get("enabled"))
+            and bool(layout.get("stack", True))
+            and not bool(settings["cw2_layout"].get("apply"))
+            and ci_visible
+        )
+        if not should_stack:
+            if saved is not None:
+                self._restore_stack_original(saved)
+            return
+
+        bar = self._bar_height()
+        if bar <= 0:
+            return
+        order = str(layout.get("order") or "cw2_top")
+        gap = int(layout.get("gap", 12) or 0)
+        docking = int((self._peer_snapshot or {}).get("docking", 1) or 1)
+        column = ["left", "center", "right"][max(0, min(2, docking % 3))]
+        target_anchor = f"top_{column}"
+        target_offset = 0 if order == "cw2_top" else max(0, self._peer_height() + gap)
+
+        try:
+            configs = self.api.globalconfig.configs
+        except Exception:
+            return
+        if saved is None:
+            self.local_state["stack_cw2_original"] = {
+                "anchor": configs.data["preferences"]["widgets_anchor"],
+                "offset_y": configs.data["preferences"]["widgets_offset_y"],
+                "offset_x": configs.data["preferences"]["widgets_offset_x"],
+            }
+            self._save_local_state()
+        changed = False
+        if not configs.isKeyLocked("preferences.widgets_anchor") and configs.data["preferences"]["widgets_anchor"] != target_anchor:
+            configs.set("preferences.widgets_anchor", target_anchor)
+            changed = True
+        if not configs.isKeyLocked("preferences.widgets_offset_y") and int(configs.data["preferences"]["widgets_offset_y"]) != target_offset:
+            configs.set("preferences.widgets_offset_y", target_offset)
+            changed = True
+        if changed:
+            configs.save(silent=True)
+            logger.info("上下排列：CW2 offset_y={}（{}）", target_offset, order)
+
+    def _restore_stack_original(self, saved: dict) -> None:
+        try:
+            configs = self.api.globalconfig.configs
+        except Exception:
+            return
+        changed = False
+        for key, field in (
+            ("preferences.widgets_anchor", "anchor"),
+            ("preferences.widgets_offset_y", "offset_y"),
+            ("preferences.widgets_offset_x", "offset_x"),
+        ):
+            if configs.isKeyLocked(key) or saved.get(field) is None:
+                continue
+            if configs.data["preferences"].get(key.split(".")[-1]) != saved.get(field):
+                configs.set(key, saved.get(field))
+                changed = True
+        if changed:
+            configs.save(silent=True)
+            logger.info("恢复 CW2 原位置")
+        self.local_state.pop("stack_cw2_original", None)
+        self._save_local_state()
 
     # ------------------------------ 设置应用 ------------------------------
     def _apply_settings(self, settings: dict, force: bool = False) -> None:
@@ -291,6 +394,7 @@ class LinkService(QObject):
         dedupe = settings["dedupe"]
         active = (
             bool(settings.get("enabled"))
+            and self.bridge.status().get("connected")
             and role != APP_CW2
             and bool(dedupe.get("enable"))
             and bool(dedupe.get("cw2_disable_notifications"))
@@ -347,8 +451,14 @@ class LinkService(QObject):
                 "time": now.strftime("%H:%M:%S"),
                 "date": now.strftime("%Y-%m-%d"),
                 "weekday": WEEKDAY_NAMES[now.weekday()],
+                "bar_height": self._bar_height(),
+                "cw2_hidden": False,
             }
         )
+        try:
+            snapshot["cw2_hidden"] = bool(self.api.globalconfig.configs.data["interactions"]["hide"]["state"])
+        except Exception:
+            pass
         try:
             runtime = self.api.runtime
             snapshot["week"] = int(getattr(runtime, "current_week", 0) or 0)
@@ -487,6 +597,9 @@ class LinkService(QObject):
             "statusText": status_text,
             "peer": peer,
             "peerVersion": peer_version,
+            "peerExe": status.get("peer_exe") or "",
+            "ciWindowVisible": bool(snapshot.get("window_visible")),
+            "ciDocking": int(snapshot.get("docking", 1) or 1),
             "role": role,
             "roleLabel": f"主程序：{APP_NAMES.get(role, role)}",
             "isMain": is_main,

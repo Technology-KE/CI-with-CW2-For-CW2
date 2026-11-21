@@ -58,6 +58,12 @@ def default_settings() -> dict:
             "show_teacher": True,
             "show_weekday": True,
         },
+        # 两个界面上下排列，保持固定间距（如 CW2 在上、ClassIsland 在下）
+        "layout": {
+            "stack": True,
+            "order": "cw2_top",
+            "gap": 12,
+        },
         "cw2_layout": {
             "apply": False,
             "anchor": "top_center",
@@ -77,6 +83,9 @@ def default_settings() -> dict:
             "enable": True,
             "ci_disable_notifications": True,
             "ci_disable_automation": False,
+            "ci_hide_main_window": False,
+            # CW2 隐藏 / 恢复时，ClassIsland 主界面跟着隐藏 / 恢复
+            "ci_follow_cw2_visibility": True,
             "cw2_disable_notifications": True,
         },
         "process": {
@@ -129,6 +138,13 @@ def normalize_settings(raw: Any) -> dict:
 
     layout = data.get("cw2_layout") if isinstance(data.get("cw2_layout"), dict) else {}
     anchor = str(layout.get("anchor") or "top_center").strip().lower()
+    stack = data.get("layout") if isinstance(data.get("layout"), dict) else {}
+    order = str(stack.get("order") or "cw2_top").strip().lower()
+    data["layout"] = {
+        "stack": as_bool(stack.get("stack"), True),
+        "order": order if order in {"cw2_top", "ci_top"} else "cw2_top",
+        "gap": as_int(stack.get("gap"), 12, 0, 200),
+    }
     data["cw2_layout"] = {
         "apply": as_bool(layout.get("apply"), False),
         "anchor": anchor if anchor in CW2_ANCHORS else "top_center",
@@ -152,6 +168,8 @@ def normalize_settings(raw: Any) -> dict:
         "enable": as_bool(dedupe.get("enable"), True),
         "ci_disable_notifications": as_bool(dedupe.get("ci_disable_notifications"), True),
         "ci_disable_automation": as_bool(dedupe.get("ci_disable_automation"), False),
+        "ci_hide_main_window": as_bool(dedupe.get("ci_hide_main_window"), False),
+        "ci_follow_cw2_visibility": as_bool(dedupe.get("ci_follow_cw2_visibility"), True),
         "cw2_disable_notifications": as_bool(dedupe.get("cw2_disable_notifications"), True),
     }
 

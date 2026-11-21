@@ -9,7 +9,9 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
+import sys
 import threading
 import time
 from typing import Callable
@@ -42,6 +44,7 @@ class LinkBridge:
         self._conn: socket.socket | None = None
         self._peer: str | None = None
         self._peer_version = ""
+        self._peer_exe = ""
         self._last_rx = 0.0
         self._threads: list[threading.Thread] = []
         self._generation = 0
@@ -96,6 +99,7 @@ class LinkBridge:
                 "connected": connected,
                 "peer": self._peer if connected else None,
                 "peer_version": self._peer_version if connected else "",
+                "peer_exe": self._peer_exe if connected else "",
                 "last_rx_ms": int(self._last_rx * 1000) if self._last_rx else 0,
                 "port": self._port,
             }
@@ -172,6 +176,7 @@ class LinkBridge:
                     self._conn = conn
                     self._peer = hello.get("app")
                     self._peer_version = hello.get("version", "")
+                    self._peer_exe = str(hello.get("exe") or "")
                     self._last_rx = time.time()
                 logger.info("已连接对端：{}（{}）", self._peer, address[0])
                 self._on_status()
@@ -224,6 +229,8 @@ class LinkBridge:
             "type": "hello",
             "app": APP_CW2,
             "version": self._app_version,
+            "exe": os.path.abspath(sys.executable),
+            "pid": os.getpid(),
             "ts": int(time.time() * 1000),
         }
         try:
@@ -313,6 +320,7 @@ class LinkBridge:
         self._conn = None
         self._peer = None
         self._peer_version = ""
+        self._peer_exe = ""
         self._last_rx = 0.0
         if conn is not None:
             try:
