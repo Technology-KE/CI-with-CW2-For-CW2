@@ -1,0 +1,12 @@
+{
+  "id": "com.kryon.ciwithcw2",
+  "name": "CI × CW2 联动（CW2 端）",
+  "version": "1.0.0",
+  "api_version": "~=0.7.0",
+  "entry": "main.py",
+  "author": "Kryon",
+  "description": "让 Class Widgets 2 与 ClassIsland 以一个主程序、一个副程序的方式联动：共享课程数据与全部设置，提供可摆放的当前课程 / 全量课表 / 时钟 / 联动状态小组件，并在副程序上自动暂停重复提醒。",
+  "url": "https://github.com/Kryon2025/CI-with-CW2-For-CW2",
+  "readme": "README.md",
+  "icon": "icon.png"
+}
